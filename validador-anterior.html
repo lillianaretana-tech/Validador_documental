@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0">
+<title>Validador Documental</title>
+<style>
+  :root{
+    --ink:#1c2b2b; --paper:#f6f4ee; --card:#ffffff;
+    --teal:#0e5c53; --teal-dark:#093f39; --amber:#c98a2c;
+    --ok:#2f7d4f; --no:#b8462f; --line:#dfd9c8; --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"Segoe UI",Roboto,Arial,sans-serif;font-size:16px;line-height:1.35;padding-bottom:70px;}
+  header{background:var(--teal);color:#fdfaf2;padding:16px;position:sticky;top:0;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.15);}
+  header h1{font-size:19px;margin:0;font-weight:700;}
+  header .sub{font-size:13px;opacity:.85;margin-top:2px;}
+  main{padding:14px;max-width:900px;margin:0 auto;}
+  .card{background:var(--card);border-radius:var(--radius);padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid var(--line);}
+  .card h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--teal-dark);margin:0 0 10px;}
+  label{display:block;font-size:13px;color:#5b6560;margin:8px 0 3px;font-weight:600;}
+  input[type=text],input[type=number],select{width:100%;font-size:15.5px;padding:9px 10px;border-radius:9px;border:1.5px solid var(--line);background:#fffefb;color:var(--ink);font-family:inherit;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .btn{display:inline-block;background:var(--teal);color:#fdfaf2;border:none;font-size:15.5px;font-weight:700;padding:12px 16px;border-radius:11px;text-align:center;width:100%;margin-top:6px;cursor:pointer;}
+  .btn.secondary{background:transparent;color:var(--teal-dark);border:1.5px solid var(--teal);}
+  .btn.amber{background:var(--amber);}
+  .btn.small{width:auto;padding:8px 12px;font-size:13px;}
+  .btn:disabled{opacity:.5;}
+  .row-item{border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:9px;background:#fffefb;}
+  .row-item .toprow{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .row-item .toprow label{margin:0;display:flex;align-items:center;gap:7px;font-weight:700;font-size:14.5px;}
+  input[type=checkbox]{width:19px;height:19px;}
+  .hint{font-size:12.5px;color:#7a8079;margin-top:6px;}
+  .status{font-size:13.5px;padding:9px 11px;border-radius:9px;margin-top:8px;display:none;white-space:pre-wrap;}
+  .status.ok{background:#e2f1e6;color:var(--ok);display:block;}
+  .status.err{background:#fbe3dd;color:var(--no);display:block;}
+  .status.loading{background:#fbecd4;color:var(--amber);display:block;}
+  .fab-add{background:var(--amber);color:#fff;border:none;border-radius:11px;padding:10px 14px;font-weight:700;font-size:14.5px;width:100%;margin-bottom:12px;cursor:pointer;}
+  .actionbar{display:flex;gap:8px;flex-wrap:wrap;}
+  .actionbar .btn{width:auto;flex:1;min-width:140px;}
+  .filehidden{display:none;}
+  .badge{font-size:12px;font-weight:700;padding:4px 9px;border-radius:20px;white-space:nowrap;display:inline-block;}
+  .badge.ok{background:#e2f1e6;color:var(--ok);}
+  .badge.no{background:#fbe3dd;color:var(--no);}
+  .badge.na{background:#eee;color:#888;}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;}
+  .tab{padding:9px 14px;border-radius:9px;background:#eee;font-size:13.5px;font-weight:700;cursor:pointer;color:#555;}
+  .tab.active{background:var(--teal);color:#fff;}
+  table.res{width:100%;border-collapse:collapse;font-size:13px;}
+  table.res th,table.res td{border:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top;}
+  table.res th{background:#f0ede2;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;}
+  .tablewrap{overflow-x:auto;}
+  .barbg{background:#eee;border-radius:6px;height:9px;overflow:hidden;margin-top:4px;}
+  .barfill{height:100%;background:var(--ok);}
+  .rootbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .rootname{font-weight:700;font-size:14.5px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Validador Documental</h1>
+  <div class="sub">Auditoría automática de carpetas y documentos por proyecto</div>
+</header>
+<main id="app"></main>
+
+<script>
+/* ================= UTILIDADES ================= */
+function esc(s){ if(s===undefined||s===null) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+function normalize(text){
+  text = String(text||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"");
+  text = text.toLowerCase();
+  text = text.replace(/[^a-z0-9*?.]+/g," ");
+  return text.replace(/\s+/g," ").trim();
+}
+function splitPatterns(v){ return String(v||"").split(";").map(p=>p.trim()).filter(Boolean); }
+function patternToRegex(pattern){
+  let re = "";
+  for(const ch of pattern){
+    if(ch === "*") re += ".*";
+    else if(ch === "?") re += ".";
+    else re += ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp("^"+re+"$");
+}
+function matchName(filename, patterns){
+  if(!patterns.length) return true;
+  const nname = normalize(filename);
+  for(const p of patterns){
+    const npat = normalize(p);
+    if(patternToRegex(npat).test(nname)) return true;
+  }
+  return false;
+}
+function asBool(v, def){
+  if(v===undefined||v===null||v==="") return def;
+  if(typeof v==="boolean") return v;
+  return ["si","sí","yes","true","1","x"].includes(String(v).trim().toLowerCase());
+}
+
+/* ================= IndexedDB para guardar el folder handle ================= */
+const IDB_NAME = "validador_documental_db";
+function idbOpen(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open(IDB_NAME,1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore("handles"); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function idbSetHandle(key, handle){
+  const db = await idbOpen();
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction("handles","readwrite");
+    tx.objectStore("handles").put(handle, key);
+    tx.oncomplete = ()=>resolve();
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function idbGetHandle(key){
+  const db = await idbOpen();
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction("handles","readonly");
+    const req = tx.objectStore("handles").get(key);
+    req.onsuccess = ()=>resolve(req.result || null);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+
+/* ================= ESTADO ================= */
+const DEFAULT_PROYECTOS = [
+  {activo:true, proyecto:"Advant", ruta:"CR - Sistema de Gestión Integrada - Sistema Documental- Advant", notas:""},
+  {activo:true, proyecto:"Bayer Metro", ruta:"CR - Sistema de Gestión Integrada - Sistema Documental- Bayer Metro", notas:""},
+  {activo:true, proyecto:"CBRE DXC", ruta:"CR - Sistema de Gestión Integrada - Sistema Documental- CBRE DXC", notas:""},
+  {activo:true, proyecto:"JLL LSEG", ruta:"CR - Sistema de Gestión Integrada - Sistema Documental- JLL LSEG", notas:""},
+  {activo:true, proyecto:"Mckinsey", ruta:"CR - Sistema de Gestión Integrada - Sistema Documental- Mckinsey", notas:""},
+  {activo:true, proyecto:"Workplaces", ruta:"CR - Sistema de Gestión Integrada - Sistema Documental- Workplaces", notas:""},
+  {activo:true, proyecto:"UBER", ruta:"CR - Sistema de Gestión Integrada - Sistema Documental-UBER", notas:""}
+];
+const DEFAULT_REGLAS = [
+  {activo:true, categoria:"Cargador de capacitaciones", regla:"Junio", carpeta:"Recursos Humanos\\R-RH-F-13 Cargador de capacitaciones", patron:"*cargador*junio*;*R-RH-F-13*junio*", minimo:1, obligatorio:true, recursivo:null, notas:"Debe existir bitácora del 1 al 7 de junio."}
+];
+
+let STATE = {
+  nombreReporte: "Reporte_Auditoria_Documental.xlsx",
+  recursivoDefault: true,
+  proyectos: JSON.parse(JSON.stringify(DEFAULT_PROYECTOS)),
+  reglas: JSON.parse(JSON.stringify(DEFAULT_REGLAS))
+};
+let rootHandle = null;
+let RESULTS = null; // {summary, detail, files}
+let activeTab = 'resumen';
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem('validador_documental_config');
+    if(raw){
+      const parsed = JSON.parse(raw);
+      Object.assign(STATE, parsed);
+    }
+  }catch(e){}
+}
+function saveState(){
+  try{ localStorage.setItem('validador_documental_config', JSON.stringify(STATE)); }catch(e){}
+}
+
+/* ================= NAVEGACION DE CARPETAS ================= */
+async function resolvePath(baseHandle, relPath){
+  if(!relPath) return baseHandle;
+  const parts = String(relPath).split(/[\\/]+/).map(p=>p.trim()).filter(Boolean);
+  let current = baseHandle;
+  for(const part of parts){
+    if(!current) return null;
+    try{
+      current = await current.getDirectoryHandle(part);
+      continue;
+    }catch(e){ /* buscar por coincidencia aproximada */ }
+    const target = normalize(part);
+    let candidates = [];
+    for await (const [name, handle] of current.entries()){
+      if(handle.kind === 'directory') candidates.push({name, handle});
+    }
+    let exact = candidates.filter(c=>normalize(c.name)===target);
+    let picked = exact[0];
+    if(!picked){
+      let partial = candidates.filter(c=>normalize(c.name).includes(target) || target.includes(normalize(c.name)));
+      partial.sort((a,b)=>a.name.length-b.name.length);
+      picked = partial[0];
+    }
+    if(!picked) return null;
+    current = picked.handle;
+  }
+  return current;
+}
+
+async function listFiles(dirHandle, recursive){
+  const out = [];
+  if(!dirHandle) return out;
+  async function walk(handle){
+    for await (const [name, entry] of handle.entries()){
+      if(entry.kind === 'file'){
+        out.push(entry);
+      } else if(entry.kind === 'directory' && recursive){
+        await walk(entry);
+      }
+    }
+  }
+  await walk(dirHandle);
+  return out;
+}
+
+async function findMatches(dirHandle, patterns, recursive){
+  const files = await listFiles(dirHandle, recursive);
+  const matched = [];
+  for(const f of files){
+    if(matchName(f.name, patterns)) matched.push(f);
+  }
+  matched.sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  return matched;
+}
+
+/* ================= EJECUTAR VALIDACION ================= */
+async function ejecutarValidacion(){
+  const statusEl = document.getElementById('runStatus');
+  if(!rootHandle){
+    statusEl.className='status err'; statusEl.textContent='Primero seleccioná la carpeta raíz de proyectos.'; return;
+  }
+  try{
+    const perm = await rootHandle.queryPermission({mode:'read'});
+    if(perm !== 'granted'){
+      const req = await rootHandle.requestPermission({mode:'read'});
+      if(req !== 'granted'){
+        statusEl.className='status err'; statusEl.textContent='No se concedió acceso a la carpeta.'; return;
+      }
+    }
+  }catch(e){
+    statusEl.className='status err'; statusEl.textContent='Error verificando permisos: '+e.message; return;
+  }
+
+  statusEl.className='status loading'; statusEl.textContent='Validando carpetas, esperá un momento...';
+
+  const detail = [];
+  const filesOut = [];
+  const proyectosActivos = STATE.proyectos.filter(p=>p.activo);
+
+  for(const proy of proyectosActivos){
+    const projHandle = await resolvePath(rootHandle, proy.ruta || proy.proyecto);
+    for(const regla of STATE.reglas.filter(r=>r.activo)){
+      const folderHandle = projHandle ? await resolvePath(projHandle, regla.carpeta) : null;
+      const patterns = splitPatterns(regla.patron);
+      const minimo = Math.max(1, parseInt(regla.minimo)||1);
+      const obligatorio = !!regla.obligatorio;
+      const recursive = (regla.recursivo===null || regla.recursivo===undefined) ? STATE.recursivoDefault : !!regla.recursivo;
+      const matches = folderHandle ? await findMatches(folderHandle, patterns, recursive) : [];
+      const status = matches.length >= minimo ? "Cumple" : (obligatorio ? "Falta" : "No aplica");
+      detail.push({
+        proyecto: proy.proyecto, categoria: regla.categoria, regla: regla.regla,
+        carpeta: regla.carpeta, patron: patterns.join("; "), minimo, encontrados: matches.length,
+        estado: status, archivoPrincipal: matches[0] ? matches[0].name : "",
+        observacion: status==="Cumple" ? "OK" : (status==="Falta" ? "No se encontraron suficientes archivos" : "")
+      });
+      for(const m of matches){
+        let mtime = "";
+        try{ const f = await m.getFile(); mtime = new Date(f.lastModified).toLocaleString('es-CR'); }catch(e){}
+        filesOut.push({proyecto:proy.proyecto, regla:regla.regla, archivo:m.name, mtime});
+      }
+    }
+  }
+
+  const summary = proyectosActivos.map(proy=>{
+    const rows = detail.filter(r=>r.proyecto===proy.proyecto);
+    const ok = rows.filter(r=>r.estado==="Cumple"||r.estado==="No aplica").length;
+    const missing = rows.filter(r=>r.estado==="Falta").length;
+    const total = Math.max(1, rows.length);
+    const pendientes = rows.filter(r=>r.estado==="Falta").map(r=>r.regla).join(", ");
+    return {
+      proyecto: proy.proyecto, cumplidas: ok, faltantes: missing,
+      pct: Math.round((ok/total)*100), estado: missing===0 ? "Cumple" : "Incompleto",
+      pendientes, ruta: proy.ruta
+    };
+  });
+
+  RESULTS = {summary, detail, files: filesOut};
+  statusEl.className='status ok';
+  statusEl.textContent = `Validación completa: ${proyectosActivos.length} proyecto(s), ${detail.length} regla(s) evaluadas.`;
+  showResultsCard();
+}
+
+function showResultsCard(){
+  const card = document.getElementById('resultsCard');
+  card.style.display = 'block';
+  document.getElementById('btnExportReport').onclick = exportReportExcel;
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.classList.toggle('active', t.dataset.tab===activeTab);
+    t.onclick = ()=>{ activeTab = t.dataset.tab; renderResultados(); };
+  });
+  renderResultsBody();
+  card.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+/* ================= EXCEL: IMPORTAR / EXPORTAR CONFIG ================= */
+function handleImportExcel(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt){
+    try{
+      const wb = XLSX.read(evt.target.result, {type:'array'});
+      if(wb.SheetNames.includes('Configuracion')){
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['Configuracion'], {header:1});
+        const map = {};
+        rows.slice(1).forEach(r=>{ if(r[0]!==undefined) map[String(r[0]).trim()] = r[1]; });
+        if(map['Nombre reporte']) STATE.nombreReporte = String(map['Nombre reporte']);
+        if(map['Buscar recursivo por defecto']!==undefined) STATE.recursivoDefault = asBool(map['Buscar recursivo por defecto'], true);
+      }
+      if(wb.SheetNames.includes('Proyectos')){
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['Proyectos'], {header:1});
+        const list = [];
+        for(let i=1;i<rows.length;i++){
+          const r = rows[i]; if(!r || !r[1]) continue;
+          list.push({activo:asBool(r[0],true), proyecto:String(r[1]||""), ruta:String(r[2]||""), notas:String(r[3]||"")});
+        }
+        if(list.length) STATE.proyectos = list;
+      }
+      if(wb.SheetNames.includes('Reglas')){
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['Reglas'], {header:1});
+        const list = [];
+        for(let i=1;i<rows.length;i++){
+          const r = rows[i]; if(!r || !r[2]) continue;
+          list.push({
+            activo:asBool(r[0],true), categoria:String(r[1]||""), regla:String(r[2]||""),
+            carpeta:String(r[3]||""), patron:String(r[4]||""), minimo:parseInt(r[5])||1,
+            obligatorio:asBool(r[6],true),
+            recursivo: (r[7]===undefined||r[7]==="") ? null : asBool(r[7],true),
+            notas:String(r[8]||"")
+          });
+        }
+        if(list.length) STATE.reglas = list;
+      }
+      saveState(); renderApp();
+      alert('Configuración importada correctamente.');
+    }catch(err){
+      console.error(err);
+      alert('No se pudo leer el Excel. Verificá que tenga las hojas Configuracion, Proyectos y Reglas con el mismo formato del archivo original.');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+}
+
+function exportConfigExcel(){
+  const wb = XLSX.utils.book_new();
+  const wsConfig = XLSX.utils.aoa_to_sheet([
+    ["Parametro","Valor","Notas"],
+    ["Nombre reporte", STATE.nombreReporte, "El reporte se guarda con este nombre."],
+    ["Buscar recursivo por defecto", STATE.recursivoDefault?"si":"no", "si = busca dentro de subcarpetas."]
+  ]);
+  const wsProy = XLSX.utils.aoa_to_sheet([
+    ["Activo","Proyecto","Ruta proyecto","Notas"],
+    ...STATE.proyectos.map(p=>[p.activo?"si":"no", p.proyecto, p.ruta, p.notas])
+  ]);
+  const wsReglas = XLSX.utils.aoa_to_sheet([
+    ["Activo","Categoria","Regla","Carpeta relativa","Patron archivo","Minimo archivos","Obligatorio","Recursivo","Notas"],
+    ...STATE.reglas.map(r=>[r.activo?"si":"no", r.categoria, r.regla, r.carpeta, r.patron, r.minimo, r.obligatorio?"si":"no", r.recursivo===null?"":(r.recursivo?"si":"no"), r.notas])
+  ]);
+  XLSX.utils.book_append_sheet(wb, wsConfig, "Configuracion");
+  XLSX.utils.book_append_sheet(wb, wsProy, "Proyectos");
+  XLSX.utils.book_append_sheet(wb, wsReglas, "Reglas");
+  XLSX.writeFile(wb, "config_validador_documental.xlsx");
+}
+
+function exportReportExcel(){
+  if(!RESULTS){ alert('Primero ejecutá la validación.'); return; }
+  const wb = XLSX.utils.book_new();
+  const wsRes = XLSX.utils.aoa_to_sheet([
+    ["Proyecto","Reglas cumplidas","Reglas faltantes","% Cumplimiento","Estado general","Pendientes","Ruta proyecto"],
+    ...RESULTS.summary.map(s=>[s.proyecto,s.cumplidas,s.faltantes,s.pct+"%",s.estado,s.pendientes,s.ruta])
+  ]);
+  const wsDet = XLSX.utils.aoa_to_sheet([
+    ["Proyecto","Categoria","Regla","Carpeta revisada","Patron esperado","Minimo","Encontrados","Estado","Archivo principal","Observacion"],
+    ...RESULTS.detail.map(d=>[d.proyecto,d.categoria,d.regla,d.carpeta,d.patron,d.minimo,d.encontrados,d.estado,d.archivoPrincipal,d.observacion])
+  ]);
+  const wsFiles = XLSX.utils.aoa_to_sheet([
+    ["Proyecto","Regla","Archivo","Fecha modificacion"],
+    ...RESULTS.files.map(f=>[f.proyecto,f.regla,f.archivo,f.mtime])
+  ]);
+  XLSX.utils.book_append_sheet(wb, wsRes, "Resumen");
+  XLSX.utils.book_append_sheet(wb, wsDet, "Detalle");
+  XLSX.utils.book_append_sheet(wb, wsFiles, "Archivos encontrados");
+  XLSX.writeFile(wb, STATE.nombreReporte || "Reporte_Auditoria_Documental.xlsx");
+}
+
+/* ================= CARGA DE LIBRERIAS ================= */
+function loadScriptSeq(urls){
+  return new Promise((resolve, reject)=>{
+    let i=0;
+    function tryNext(){
+      if(i>=urls.length){ reject(new Error('No se pudo cargar')); return; }
+      const s = document.createElement('script');
+      s.src = urls[i];
+      s.onload = ()=>resolve();
+      s.onerror = ()=>{ i++; tryNext(); };
+      document.head.appendChild(s);
+    }
+    tryNext();
+  });
+}
+
+/* ================= RENDER ================= */
+function renderApp(){
+  const app = document.getElementById('app');
+  const supported = 'showDirectoryPicker' in window;
+  app.innerHTML = `
+    ${!supported ? `<div class="card"><div class="status err">Este navegador no soporta selección de carpetas (Chrome o Edge en computadora sí funcionan). Abrí este archivo con Chrome o Edge.</div></div>` : ''}
+
+    <div class="card">
+      <h2>1. Carpeta raíz de proyectos</h2>
+      <div class="rootbox">
+        <button class="btn" id="btnPickRoot" style="width:auto;">📁 Seleccionar carpeta raíz</button>
+        <span class="rootname" id="rootName">${rootHandle ? esc(rootHandle.name) : 'Ninguna seleccionada'}</span>
+      </div>
+      <div class="hint">Elegí la carpeta que contiene todas las carpetas de proyectos (equivalente a "Ruta raiz proyectos" del Excel original). El navegador pedirá permiso una vez; luego queda recordada en este dispositivo.</div>
+    </div>
+
+    <div class="card">
+      <h2>2. Configuración general</h2>
+      <label>Nombre del reporte a exportar</label>
+      <input type="text" id="f_reporte" value="${esc(STATE.nombreReporte)}">
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+        <input type="checkbox" id="f_recursivo" ${STATE.recursivoDefault?'checked':''}> Buscar en subcarpetas por defecto
+      </label>
+      <div class="actionbar" style="margin-top:10px;">
+        <button class="btn secondary small" id="btnImport">📥 Importar Excel de config</button>
+        <button class="btn secondary small" id="btnExportConfig">📤 Exportar config a Excel</button>
+      </div>
+      <input type="file" id="fileImport" class="filehidden" accept=".xlsx">
+    </div>
+
+    <div class="card">
+      <h2>3. Proyectos (${STATE.proyectos.length})</h2>
+      <button class="fab-add" id="btnAddProy">➕ Agregar proyecto</button>
+      <div id="proyList"></div>
+    </div>
+
+    <div class="card">
+      <h2>4. Reglas / documentos a validar (${STATE.reglas.length})</h2>
+      <div class="hint" style="margin-bottom:10px;">"Patrón archivo" acepta comodines: * y ?. Ejemplo: *bitacora*22*28*junio* — varios patrones separados por punto y coma.</div>
+      <button class="fab-add" id="btnAddRegla">➕ Agregar regla</button>
+      <div id="reglaList"></div>
+    </div>
+
+    <div class="card">
+      <h2>5. Ejecutar</h2>
+      <button class="btn amber" id="btnEjecutar" style="font-size:16.5px;">🔎 Ejecutar validación</button>
+      <div id="runStatus" class="status"></div>
+    </div>
+
+    <div class="card" id="resultsCard" style="display:none;">
+      <h2>Resultados</h2>
+      <div class="tabs">
+        <div class="tab" data-tab="resumen">Resumen</div>
+        <div class="tab" data-tab="detalle">Detalle</div>
+        <div class="tab" data-tab="archivos">Archivos encontrados</div>
+      </div>
+      <div id="resultsBody"></div>
+      <button class="btn secondary" id="btnExportReport" style="margin-top:12px;">⬇️ Exportar reporte (Excel)</button>
+    </div>
+  `;
+
+  document.getElementById('btnPickRoot').onclick = pickRoot;
+  document.getElementById('f_reporte').onchange = e=>{STATE.nombreReporte=e.target.value; saveState();};
+  document.getElementById('f_recursivo').onchange = e=>{STATE.recursivoDefault=e.target.checked; saveState();};
+  document.getElementById('btnImport').onclick = ()=>document.getElementById('fileImport').click();
+  document.getElementById('fileImport').onchange = handleImportExcel;
+  document.getElementById('btnExportConfig').onclick = exportConfigExcel;
+  document.getElementById('btnAddProy').onclick = ()=>{ STATE.proyectos.push({activo:true,proyecto:"Nuevo proyecto",ruta:"",notas:""}); saveState(); renderApp(); };
+  document.getElementById('btnAddRegla').onclick = ()=>{ STATE.reglas.push({activo:true,categoria:"",regla:"Nueva regla",carpeta:"",patron:"",minimo:1,obligatorio:true,recursivo:null,notas:""}); saveState(); renderApp(); };
+  document.getElementById('btnEjecutar').onclick = ejecutarValidacion;
+
+  renderProyList();
+  renderReglaList();
+
+  if(RESULTS){
+    document.getElementById('resultsCard').style.display = 'block';
+    document.getElementById('btnExportReport').onclick = exportReportExcel;
+    app.querySelectorAll('.tab').forEach(t=>{
+      t.classList.toggle('active', t.dataset.tab===activeTab);
+      t.onclick = ()=>{ activeTab = t.dataset.tab; renderResultados(); };
+    });
+    renderResultsBody();
+  }
+}
+
+function renderProyList(){
+  const el = document.getElementById('proyList');
+  el.innerHTML = STATE.proyectos.map((p,idx)=>`
+    <div class="row-item">
+      <div class="toprow">
+        <label><input type="checkbox" class="p-activo" data-idx="${idx}" ${p.activo?'checked':''}> Activo</label>
+        <button class="btn secondary small p-del" data-idx="${idx}">Eliminar</button>
+      </div>
+      <label>Nombre del proyecto</label>
+      <input type="text" class="p-nombre" data-idx="${idx}" value="${esc(p.proyecto)}">
+      <label>Ruta relativa desde la carpeta raíz</label>
+      <input type="text" class="p-ruta" data-idx="${idx}" value="${esc(p.ruta)}" placeholder="ej. CR - Sistema Documental - Advant">
+      <label>Notas</label>
+      <input type="text" class="p-notas" data-idx="${idx}" value="${esc(p.notas)}">
+    </div>
+  `).join('') || '<div class="hint">Sin proyectos aún.</div>';
+  el.querySelectorAll('.p-activo').forEach(x=>x.onchange=e=>{STATE.proyectos[e.target.dataset.idx].activo=e.target.checked; saveState();});
+  el.querySelectorAll('.p-nombre').forEach(x=>x.onchange=e=>{STATE.proyectos[e.target.dataset.idx].proyecto=e.target.value; saveState();});
+  el.querySelectorAll('.p-ruta').forEach(x=>x.onchange=e=>{STATE.proyectos[e.target.dataset.idx].ruta=e.target.value; saveState();});
+  el.querySelectorAll('.p-notas').forEach(x=>x.onchange=e=>{STATE.proyectos[e.target.dataset.idx].notas=e.target.value; saveState();});
+  el.querySelectorAll('.p-del').forEach(x=>x.onclick=e=>{ if(confirm('¿Eliminar este proyecto?')){ STATE.proyectos.splice(e.target.dataset.idx,1); saveState(); renderApp(); } });
+}
+
+function renderReglaList(){
+  const el = document.getElementById('reglaList');
+  el.innerHTML = STATE.reglas.map((r,idx)=>`
+    <div class="row-item">
+      <div class="toprow">
+        <label><input type="checkbox" class="r-activo" data-idx="${idx}" ${r.activo?'checked':''}> Activa</label>
+        <button class="btn secondary small r-del" data-idx="${idx}">Eliminar</button>
+      </div>
+      <div class="grid2">
+        <div><label>Categoría</label><input type="text" class="r-categoria" data-idx="${idx}" value="${esc(r.categoria)}"></div>
+        <div><label>Regla (nombre)</label><input type="text" class="r-regla" data-idx="${idx}" value="${esc(r.regla)}"></div>
+      </div>
+      <label>Carpeta relativa (dentro del proyecto)</label>
+      <input type="text" class="r-carpeta" data-idx="${idx}" value="${esc(r.carpeta)}" placeholder="ej. Recursos Humanos\\R-RH-F-13 Cargador de capacitaciones">
+      <label>Patrón de archivo (usa * y ?, separá con ;)</label>
+      <input type="text" class="r-patron" data-idx="${idx}" value="${esc(r.patron)}" placeholder="*bitacora*22*28*junio*">
+      <div class="grid3">
+        <div><label>Mínimo archivos</label><input type="number" class="r-minimo" data-idx="${idx}" value="${r.minimo}" min="1"></div>
+        <div><label>Obligatorio</label>
+          <select class="r-obligatorio" data-idx="${idx}"><option value="si" ${r.obligatorio?'selected':''}>Sí</option><option value="no" ${!r.obligatorio?'selected':''}>No</option></select>
+        </div>
+        <div><label>Recursivo</label>
+          <select class="r-recursivo" data-idx="${idx}">
+            <option value="" ${r.recursivo===null?'selected':''}>Usar general</option>
+            <option value="si" ${r.recursivo===true?'selected':''}>Sí</option>
+            <option value="no" ${r.recursivo===false?'selected':''}>No</option>
+          </select>
+        </div>
+      </div>
+      <label>Notas</label>
+      <input type="text" class="r-notas" data-idx="${idx}" value="${esc(r.notas)}">
+    </div>
+  `).join('') || '<div class="hint">Sin reglas aún.</div>';
+  el.querySelectorAll('.r-activo').forEach(x=>x.onchange=e=>{STATE.reglas[e.target.dataset.idx].activo=e.target.checked; saveState();});
+  el.querySelectorAll('.r-categoria').forEach(x=>x.onchange=e=>{STATE.reglas[e.target.dataset.idx].categoria=e.target.value; saveState();});
+  el.querySelectorAll('.r-regla').forEach(x=>x.onchange=e=>{STATE.reglas[e.target.dataset.idx].regla=e.target.value; saveState();});
+  el.querySelectorAll('.r-carpeta').forEach(x=>x.onchange=e=>{STATE.reglas[e.target.dataset.idx].carpeta=e.target.value; saveState();});
+  el.querySelectorAll('.r-patron').forEach(x=>x.onchange=e=>{STATE.reglas[e.target.dataset.idx].patron=e.target.value; saveState();});
+  el.querySelectorAll('.r-minimo').forEach(x=>x.onchange=e=>{STATE.reglas[e.target.dataset.idx].minimo=parseInt(e.target.value)||1; saveState();});
+  el.querySelectorAll('.r-obligatorio').forEach(x=>x.onchange=e=>{STATE.reglas[e.target.dataset.idx].obligatorio=(e.target.value==='si'); saveState();});
+  el.querySelectorAll('.r-recursivo').forEach(x=>x.onchange=e=>{const v=e.target.value; STATE.reglas[e.target.dataset.idx].recursivo=(v===''?null:v==='si'); saveState();});
+  el.querySelectorAll('.r-notas').forEach(x=>x.onchange=e=>{STATE.reglas[e.target.dataset.idx].notas=e.target.value; saveState();});
+  el.querySelectorAll('.r-del').forEach(x=>x.onclick=e=>{ if(confirm('¿Eliminar esta regla?')){ STATE.reglas.splice(e.target.dataset.idx,1); saveState(); renderApp(); } });
+}
+
+function renderResultados(){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===activeTab));
+  renderResultsBody();
+}
+
+function renderResultsBody(){
+  const body = document.getElementById('resultsBody');
+  if(!RESULTS){ body.innerHTML=''; return; }
+  if(activeTab==='resumen'){
+    body.innerHTML = `
+      <div class="tablewrap"><table class="res">
+        <tr><th>Proyecto</th><th>Cumplidas</th><th>Faltantes</th><th>% Cumplimiento</th><th>Estado</th><th>Pendientes</th></tr>
+        ${RESULTS.summary.map(s=>`
+          <tr>
+            <td><strong>${esc(s.proyecto)}</strong></td>
+            <td>${s.cumplidas}</td>
+            <td>${s.faltantes}</td>
+            <td>${s.pct}%<div class="barbg"><div class="barfill" style="width:${s.pct}%;background:${s.pct===100?'#2f7d4f':'#c98a2c'}"></div></div></td>
+            <td><span class="badge ${s.estado==='Cumple'?'ok':'no'}">${s.estado}</span></td>
+            <td>${esc(s.pendientes)}</td>
+          </tr>`).join('')}
+      </table></div>`;
+  } else if(activeTab==='detalle'){
+    body.innerHTML = `
+      <div class="tablewrap"><table class="res">
+        <tr><th>Proyecto</th><th>Categoría</th><th>Regla</th><th>Encontrados</th><th>Mínimo</th><th>Estado</th><th>Archivo principal</th></tr>
+        ${RESULTS.detail.map(d=>`
+          <tr>
+            <td>${esc(d.proyecto)}</td><td>${esc(d.categoria)}</td><td>${esc(d.regla)}</td>
+            <td>${d.encontrados}</td><td>${d.minimo}</td>
+            <td><span class="badge ${d.estado==='Cumple'?'ok':(d.estado==='Falta'?'no':'na')}">${d.estado}</span></td>
+            <td>${esc(d.archivoPrincipal)}</td>
+          </tr>`).join('')}
+      </table></div>`;
+  } else {
+    body.innerHTML = `
+      <div class="tablewrap"><table class="res">
+        <tr><th>Proyecto</th><th>Regla</th><th>Archivo</th><th>Fecha modificación</th></tr>
+        ${RESULTS.files.map(f=>`<tr><td>${esc(f.proyecto)}</td><td>${esc(f.regla)}</td><td>${esc(f.archivo)}</td><td>${esc(f.mtime)}</td></tr>`).join('')}
+      </table></div>`;
+  }
+}
+
+async function pickRoot(){
+  try{
+    rootHandle = await window.showDirectoryPicker();
+    await idbSetHandle('root', rootHandle);
+    renderApp();
+  }catch(e){
+    if(e.name !== 'AbortError') alert('No se pudo abrir el selector de carpetas: '+e.message);
+  }
+}
+
+/* ================= INIT ================= */
+async function init(){
+  loadState();
+  try{
+    const saved = await idbGetHandle('root');
+    if(saved){
+      rootHandle = saved;
+    }
+  }catch(e){}
+  await loadScriptSeq([
+    "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+    "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
+  ]).catch(()=>{});
+  renderApp();
+}
+init();
+</script>
+</body>
+</html>
